@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 from models import GPT, BERT
-from data import preprocessGPT, preprocessBERT
+from data import preprocess_GPT, preprocessBERT
 
-run_GPT = True #TODO: change this depending on whether we are running BERT or GPT
+run_GPT = True #TODO: toggle this depending on whether we are running BERT or GPT
 
 gpt_hyperparams = {
     "batch_size": 64,
@@ -35,10 +35,26 @@ if (run_GPT):
 else:
     experiment.log_parameters(bert_hyperparams)
 
+
+def train_GPT(model, train_loader, hyperparams):
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
+
+    model = model.train()
+    with experiment.train():
+        for epoch_i in range(hyperparams["num_epochs"]):
+            for batch_i, seq_batch in enumerate(train_loader):
+                optimizer.zero_grad()
+
+
+
+
+
+
 if __name__ == "__main__":
     if run_GPT:
         print("loading data for GPT model")
-        vocab_size, train_loader, fine_tuning_loader, validation_loader = preprocessGPT()
+        vocab_size, train_loader, fine_tuning_loader, validation_loader = preprocess_GPT()
     else:
         print("loading data for BERT model")
         train_loader = 0
@@ -58,6 +74,10 @@ if __name__ == "__main__":
 
     #train model
     print("training model ...")
+    if run_GPT:
+        train_GPT(model, train_loader, gpt_hyperparams)
+    else:
+        #TODO
 
     #fine tune model
     print("fine tuning model ...")

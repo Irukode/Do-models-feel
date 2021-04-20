@@ -3,10 +3,11 @@ import torch
 import numpy as np
 import random
 
+MAX_REVIEW_LENGTH = 192
 
 # generates list of sentences, list of scores
 def readCSV():
-    sentences = []
+    reviews = []
     scores = []
     with open("IMDB_Dataset.csv", mode='r') as file:
         next(file)
@@ -19,9 +20,9 @@ def readCSV():
             sentence = sentence.replace('"', "")
 
 
-            if len(sentence.split()) > 192:
+            if len(sentence.split()) > MAX_REVIEW_LENGTH:
                 continue
-            sentences.append(sentence)
+            reviews.append(sentence)
 
             if score == "positive\n":
                 score = 0
@@ -33,27 +34,74 @@ def readCSV():
                 exit(1)
 
             scores.append(score)
-    return sentences, scores
+    return reviews, scores
 
-def preprocessGPT():
-    sentences, scores = readCSV()
-    #TODO: tokenize sentences, scores
 
-    #TODO: get vocab size
-    vocab_size = 0
+
+
+
+def preprocess_GPT():
+    reviews, scores = readCSV()
+    tokenizer = Tokenizer()
+    tokenizer.tokenize_word("PAD")
+
+    all_ids = []
+    for review in reviews:
+        ids = tokenizer.tokenize_line(review)
+        all_ids.append(torch.LongTensor(ids))
+
+    seq_len = MAX_REVIEW_LENGTH #lets just use this for now
+
+    all_ids.append(torch.zeros(seq_len)) #spacer line to ensure padding goes to seq len
+    all_ids = torch.nn.utils.rnn.pad_sequence(all_ids, batch_first=True, padding_value=tokenizer.id2word("PAD"))
+    all_ids=all_ids[:-1] #remove spacer line
+
+    train_loader = training_dataset_GPT(all_ids)
+    #TODO: tokenize and process scores
 
     #TODO: create train, fine_tune, validation loaders
-    train_loader, finetune_loader, validation_loader = 0, 0, 0
+    finetune_loader, validation_loader = 0, 0
 
-    return vocab_size, train_loader, finetune_loader, validation_loader
+    return len(tokenizer.word2id), train_loader, finetune_loader, validation_loader
 
 
+class Tokenizer():
+    def __init__(self):
+        self.word2id = {}
+        self.id2word = {}
+        self.curr_id = 0
 
-# def preprocessBERT():
-#     sentences, scores = readCSV()
-#     # TODO: tokenize sentences, scores
-#
-#     #TODO: create train, fine_tune, validation loaders
+    def tokenize_line(self, line):
+        line_ids = []
+        words = line.split()
+        for word in words:
+            id = self.tokenize_word(word)
+            line_ids.append(id)
+        return line_ids
+
+    def tokenize_word(self, word):
+        if word not in self.word2id:
+            self.word2id[word] = self.curr_id
+            self.id2word[self.curr_id] = word
+            self.curr_id += 1
+        return self.word2id[word]
+
+class training_dataset_GPT(Dataset):
+    def __init__(self, sequences):
+        self.sequences = sequences
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, idx):
+        return self.sequences[idx]
+
+
+def preprocessBERT():
+    sentences, scores = readCSV()
+    # TODO: tokenize sentences, scores
+
+    #TODO: create train, fine_tune, validation loaders
 
 
 # just for debugging
