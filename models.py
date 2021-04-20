@@ -51,9 +51,9 @@ class BERT(nn.Module):
 
     def forward(self, x):
         out = self.tok_emb(x) + self.pos_emb
-        out = out.transpose(1,0) #Transpose to put the batch second?
+        # out = out.transpose(1,0) #Transpose to put the batch second?
         out = self.transformer(out)
-        out = out.transpose(1,0)
+        # out = out.transpose(1,0)
         out = self.linear(out)
         return out
 

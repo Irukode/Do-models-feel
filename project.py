@@ -3,9 +3,11 @@ import torch
 import torch.nn as nn
 import numpy as np
 from models import GPT, BERT
-from data import preprocess_GPT, preprocessBERT
+from data import preprocess_GPT, preprocess_BERT
+from tqdm import tqdm
 
-run_GPT = True #TODO: toggle this depending on whether we are running BERT or GPT
+run_GPT = False #TODO: toggle this depending on whether we are running BERT or GPT
+# run_GPT = True
 
 gpt_hyperparams = {
     "batch_size": 4,
@@ -18,8 +20,8 @@ gpt_hyperparams = {
  }
 
 bert_hyperparams = {
-    "batch_size": 16,
-    "num_epochs": 4 * 100/15, #adjusts for only training on 15% of data
+    "batch_size": 4,
+    "num_epochs": 4,
     "learning_rate": 0.004,
     "num_heads": 4,
     "num_layers": 2,
@@ -49,7 +51,7 @@ def train_GPT(model, train_loader, hyperparams):
                 optimizer.zero_grad()
 
                 seq_batch = seq_batch.to(device)
-                print("seq shape", seq_batch.shape) #should be batch size, seq len
+                print("seq shape", seq_batch.shape) #should be [batch size, seq len]
                 inp_batch = seq_batch
                 labels_batch = torch.roll(seq_batch, -1, 1)
                 labels_batch[:,-1] = 0
@@ -122,6 +124,56 @@ def finetune_GPT(model, finetune_loader, hyperparams):
                 loss.backward()
                 optimizer.step()
 
+def train_BERT(model, train_loader, hyperparams):
+    loss_fn = nn.CrossEntropyLoss(ignore_index=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
+
+    model = model.train()
+    with experiment.train():
+        for epoch_i in range(hyperparams["num_epochs"]):
+            total_loss = 0
+            word_count = 0
+            for batch_i in tqdm(train_loader):
+                optimizer.zero_grad()
+
+                seq_batch = batch_i["sequences"].to(device)
+                masked_indices = batch_i["masked_indices"].to(device)
+                labels = batch_i["labels"].to(device)
+                print("seq shape", seq_batch.shape)  # should be [batch size, seq len]
+
+                # grab the labels we need for loss calculation
+                masked_y_labels = torch.LongTensor(np.zeros(masked_indices.shape)).to(device)
+                for row in range(masked_indices.shape[0]):
+                    masked_y_labels[row] = labels[row][masked_indices[row]]
+
+                current_count = masked_indices.shape[0] * masked_indices.shape[1]
+                word_count += current_count
+
+                pred = model(seq_batch)
+
+                y_pred_masked = torch.FloatTensor(
+                    np.zeros((masked_indices.shape[0], masked_indices.shape[1], pred.shape[2]))).to(device)
+                for row in range(masked_indices.shape[0]):
+                    y_pred_masked[row] = pred[row][masked_indices[row]]
+
+                flat_pred = y_pred_masked.permute(0,2,1)
+
+                loss = loss_fn(flat_pred, masked_y_labels)
+                total_loss = loss * current_count
+
+                batch_loss = loss.detach().cpu().numpy()
+                batch_perp = np.exp(batch_loss)
+
+                # print("ep", epoch_i, "loss", batch_loss, "perp", batch_perp)
+                experiment.log_metric("train_loss", batch_loss)
+                experiment.log_metric("train_perp", batch_perp)
+
+                loss.backward()
+                optimizer.step()
+
+            average_loss = total_loss / word_count
+            perplexity = np.exp(average_loss)
+            print("ep", epoch_i, "loss", total_loss, "perp", perplexity)
 
 
 
@@ -133,10 +185,7 @@ if __name__ == "__main__":
         vocab_size, train_loader, fine_tuning_loader, validation_loader = preprocess_GPT(gpt_hyperparams)
     else:
         print("loading data for BERT model")
-        train_loader = 0
-        fine_tuning_loader = 0
-        vocab_size = 0
-        validation_loader = 0
+        vocab_size, train_loader, fine_tuning_loader, validation_loader = preprocess_BERT(bert_hyperparams)
 
     #create model
     if run_GPT:
@@ -144,22 +193,24 @@ if __name__ == "__main__":
                     d_model=gpt_hyperparams["d_model"], h= gpt_hyperparams["num_heads"],
                     n=gpt_hyperparams["num_layers"]).to(device)
     else:
-        model = BERT(device=device, seq_len=gpt_hyperparams["seq_len"], num_words=vocab_size,
-                    d_model=gpt_hyperparams["d_model"], h=gpt_hyperparams["num_heads"],
-                    n=gpt_hyperparams["num_layers"]).to(device)
+        model = BERT(device=device, seq_len=bert_hyperparams["seq_len"], num_words=vocab_size,
+                    d_model=bert_hyperparams["d_model"], h=bert_hyperparams["num_heads"],
+                    n=bert_hyperparams["num_layers"]).to(device)
 
     #train model
     print("training model ...")
     if run_GPT:
         train_GPT(model, train_loader, gpt_hyperparams)
     else:
-        #TODO
-        pass
+        train_BERT(model, train_loader, bert_hyperparams)
 
     #fine tune model
     print("fine tuning model ...")
     if run_GPT:
         finetune_GPT(model, fine_tuning_loader, gpt_hyperparams)
+    else:
+        #TODO
+        pass
 
     #validate model
     print("validating mode ...")

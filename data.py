@@ -1,16 +1,18 @@
 from torch.utils.data import Dataset, DataLoader
 import torch
 import numpy as np
+from tqdm import tqdm
 
 MAX_WORDS = 126 #seq len - 2
+MASK_TOKEN = "<MASK>"
 
 # generates sentences and scores for train, fine tune, validation
 def readCSV():
     reviews = []
     scores = []
-    with open("IMDB_Dataset.csv", mode='r') as file:
+    with open("IMDB_Dataset.csv", mode='r', encoding='utf-8') as file:
         next(file)
-        for row in file:
+        for row in tqdm(file):
             sep = row.rfind(",")
             sentence = row[1:sep-1]
             score = row[sep+1:]
@@ -39,7 +41,7 @@ def readCSV():
     finetune_reviews = reviews[finetune_indices]
     finetune_scores = scores[finetune_indices]
     validate_reviews = reviews[validate_indices]
-    validate_scores = reviews[validate_indices]
+    validate_scores = scores[validate_indices]
 
     return train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores
 
@@ -52,7 +54,7 @@ class Tokenizer():
 
     def tokenize_reviews_list(self, reviews, seq_len):
         all_ids = []
-        for review in reviews:
+        for review in tqdm(reviews):
             ids = self.tokenize_line(review)
             all_ids.append(torch.LongTensor(ids))
 
@@ -122,12 +124,110 @@ class training_dataset_GPT(Dataset):
         return self.sequences[idx]
 
 
-def preprocessBERT():
+def preprocess_BERT(hyperparams):
     train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores = readCSV()
+    tokenizer = Tokenizer()
     # TODO: tokenize sentences, scores
+    train_reviews = tokenizer.tokenize_reviews_list(train_reviews, hyperparams["seq_len"])
+    finetune_reviews = tokenizer.tokenize_reviews_list(finetune_reviews, hyperparams["seq_len"])
+    finetune_scores = tokenizer.tokenize_reviews_list(finetune_scores, 1)
+    validate_reviews = tokenizer.tokenize_reviews_list(validate_reviews, hyperparams["seq_len"])
+    validate_scores = tokenizer.tokenize_reviews_list(validate_scores, 1)
 
     #TODO: create train, fine_tune, validation loaders
+    word2id = tokenizer.word2id
+    word2id[MASK_TOKEN] = len(word2id)
 
+    train_set = training_dataset_BERT(train_reviews, word2id)
+    finetune_set = finetune_dataset_BERT(finetune_reviews, word2id, finetune_scores)
+    validate_set = finetune_dataset_BERT(validate_reviews, word2id, validate_scores)
+
+    train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=False) # TODO: set to true
+    finetune_loader = DataLoader(finetune_set, batch_size=hyperparams["batch_size"], shuffle=False) # TODO: set to true
+    validation_loader = DataLoader(validate_set, batch_size=hyperparams["batch_size"], shuffle=False) # TODO: set to true
+
+    return len(word2id), train_loader, finetune_loader, validation_loader
+
+class training_dataset_BERT(Dataset):
+    def __init__(self, sequences, word2id):
+        self.labels = sequences.numpy()
+        self.sequences = sequences.tolist()
+        self.word2id = word2id
+        self.masked_indices = []
+
+        seq_length = len(self.sequences[0])
+
+        total_pick = round(seq_length * 0.15)
+
+        mask_id = self.word2id[MASK_TOKEN]
+
+        # for every sequence, mask out 15% of the tokens
+        for rows in tqdm(self.sequences):
+            rand_indices = torch.randperm(seq_length)
+            self.masked_indices.append(rand_indices[:total_pick].tolist())
+            for i in range(total_pick):
+                # mask logic
+                rand_num = np.random.rand(1)
+                if(rand_num < 0.8):
+                    rows[rand_indices[i]] = mask_id
+                elif(rand_num < 0.9):
+                    rows[rand_indices[i]] = np.random.randint(len(self.word2id))
+
+        self.sequences = torch.LongTensor(self.sequences)
+        self.masked_indices = torch.LongTensor(self.masked_indices)
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, idx):
+        item = {
+            "sequences": self.sequences[idx],
+            "masked_indices": self.masked_indices[idx],
+            "labels": self.labels[idx]
+        }
+        return item
+
+class finetune_dataset_BERT(Dataset):
+    def __init__(self, sequences, word2id, scores):
+        self.labels = sequences.numpy()
+        self.sequences = sequences.tolist()
+        self.word2id = word2id
+        self.scores = scores
+        assert len(sequences) == len(scores)
+        self.masked_indices = []
+
+        seq_length = len(self.sequences[0])
+
+        total_pick = round(seq_length * 0.15)
+
+        mask_id = self.word2id[MASK_TOKEN]
+
+        # for every sequence, mask out 15% of the tokens
+        for rows in tqdm(self.sequences):
+            rand_indices = torch.randperm(seq_length)
+            self.masked_indices.append(rand_indices[:total_pick].tolist())
+            for i in range(total_pick):
+                # mask logic
+                rand_num = np.random.rand(1)
+                if (rand_num < 0.8):
+                    rows[rand_indices[i]] = mask_id
+                elif (rand_num < 0.9):
+                    rows[rand_indices[i]] = np.random.randint(len(self.word2id))
+
+        self.sequences = torch.LongTensor(self.sequences)
+        self.masked_indices = torch.LongTensor(self.masked_indices)
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, idx):
+        item = {
+            "sequences": self.sequences[idx],
+            "masked_indices": self.masked_indices[idx],
+            "labels": self.labels[idx],
+            "scores": self.scores[idx]
+        }
+        return item
 
 # just for debugging
 if __name__ == "__main__":
