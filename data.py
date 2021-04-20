@@ -1,9 +1,9 @@
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torch
 import numpy as np
 import random
 
-MAX_REVIEW_LENGTH = 192
+MAX_REVIEW_LENGTH = 190 #seq_len - 2
 
 # generates list of sentences, list of scores
 def readCSV():
@@ -40,7 +40,7 @@ def readCSV():
 
 
 
-def preprocess_GPT():
+def preprocess_GPT(hyperparams):
     reviews, scores = readCSV()
     tokenizer = Tokenizer()
     tokenizer.tokenize_word("PAD")
@@ -50,13 +50,14 @@ def preprocess_GPT():
         ids = tokenizer.tokenize_line(review)
         all_ids.append(torch.LongTensor(ids))
 
-    seq_len = MAX_REVIEW_LENGTH #lets just use this for now
-
-    all_ids.append(torch.zeros(seq_len)) #spacer line to ensure padding goes to seq len
-    all_ids = torch.nn.utils.rnn.pad_sequence(all_ids, batch_first=True, padding_value=tokenizer.id2word("PAD"))
+    all_ids.append(torch.zeros(hyperparams["seq_len"])) #spacer line to ensure padding goes to seq len
+    all_ids = torch.nn.utils.rnn.pad_sequence(all_ids, batch_first=True, padding_value=tokenizer.word2id["PAD"])
     all_ids=all_ids[:-1] #remove spacer line
 
-    train_loader = training_dataset_GPT(all_ids)
+
+
+    train_set = training_dataset_GPT(all_ids)
+    train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=False) #TODO: set to true
     #TODO: tokenize and process scores
 
     #TODO: create train, fine_tune, validation loaders

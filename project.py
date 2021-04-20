@@ -8,22 +8,22 @@ from data import preprocess_GPT, preprocessBERT
 run_GPT = True #TODO: toggle this depending on whether we are running BERT or GPT
 
 gpt_hyperparams = {
-    "batch_size": 64,
-    "num_epochs": 5,
+    "batch_size": 16,
+    "num_epochs": 1,
     "learning_rate": 0.004,
-    "num_heads": 8,
-    "num_layers": 6,
-    "d_model": 512,
+    "num_heads": 4,
+    "num_layers": 2,
+    "d_model": 256,
     "seq_len": 192
  }
 
 bert_hyperparams = {
-    "batch_size": 64,
-    "num_epochs": 5 * 100/15, #adjusts for only training on 15% of data
+    "batch_size": 16,
+    "num_epochs": 1 * 100/15, #adjusts for only training on 15% of data
     "learning_rate": 0.004,
-    "num_heads": 8,
-    "num_layers": 6,
-    "d_model": 512,
+    "num_heads": 4,
+    "num_layers": 2,
+    "d_model": 256,
     "seq_len": 192
 }
 
@@ -37,8 +37,8 @@ else:
 
 
 def train_GPT(model, train_loader, hyperparams):
-    loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate']) #TODO: ignore index
+    loss_fn = nn.CrossEntropyLoss(ignore_index=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
 
     model = model.train()
     with experiment.train():
@@ -48,11 +48,25 @@ def train_GPT(model, train_loader, hyperparams):
 
                 seq_batch = seq_batch.to(device)
                 print("seq shape", seq_batch.shape) #should be batch size, seq len
-                inp_batch = seq_batch[:,:-1]
-                out_batch = seq_batch[:,1:]
+                inp_batch = seq_batch
+                labels_batch = torch.roll(seq_batch, -1, 1)
+                labels_batch[:,-1] = 0
+
+                #print("seq_batch", seq_batch[5])
+                #print("inp batch", inp_batch[5])
+                #print("labels batch", labels_batch[5])
+                #exit(1)
+
 
                 pred = model(inp_batch)
-                batch_loss = loss_fn()
+
+                flat_pred = torch.flatten(pred, start_dim=0, end_dim=1)
+                flat_labels = torch.flatten(labels_batch, start_dim=0, end_dim=1)
+                batch_loss = loss_fn(flat_pred, flat_labels).detach().numpy()
+                batch_perp = np.exp(batch_loss)
+
+                print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp)
+
 
 
 
@@ -64,7 +78,7 @@ def train_GPT(model, train_loader, hyperparams):
 if __name__ == "__main__":
     if run_GPT:
         print("loading data for GPT model")
-        vocab_size, train_loader, fine_tuning_loader, validation_loader = preprocess_GPT()
+        vocab_size, train_loader, fine_tuning_loader, validation_loader = preprocess_GPT(gpt_hyperparams)
     else:
         print("loading data for BERT model")
         train_loader = 0
@@ -76,11 +90,11 @@ if __name__ == "__main__":
     if run_GPT:
         model = GPT(device=device, seq_len=gpt_hyperparams["seq_len"], num_words=vocab_size,
                     d_model=gpt_hyperparams["d_model"], h= gpt_hyperparams["num_heads"],
-                    n=gpt_hyperparams["num_layers"])
+                    n=gpt_hyperparams["num_layers"]).to(device)
     else:
         model = BERT(device=device, seq_len=gpt_hyperparams["seq_len"], num_words=vocab_size,
                     d_model=gpt_hyperparams["d_model"], h=gpt_hyperparams["num_heads"],
-                    n=gpt_hyperparams["num_layers"])
+                    n=gpt_hyperparams["num_layers"]).to(device)
 
     #train model
     print("training model ...")
@@ -88,6 +102,7 @@ if __name__ == "__main__":
         train_GPT(model, train_loader, gpt_hyperparams)
     else:
         #TODO
+        pass
 
     #fine tune model
     print("fine tuning model ...")
