@@ -2,7 +2,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 import numpy as np
 
-MAX_REVIEW_LENGTH = 190 #seq_len - 2
+MAX_WORDS = 126 #seq len - 2
 
 # generates sentences and scores for train, fine tune, validation
 def readCSV():
@@ -19,8 +19,6 @@ def readCSV():
             sentence = sentence.replace('"', "")
 
 
-            if len(sentence.split()) > MAX_REVIEW_LENGTH:
-                continue
             reviews.append(sentence)
 
             assert score == "positive\n" or score == "negative\n"
@@ -66,7 +64,7 @@ class Tokenizer():
 
     def tokenize_line(self, line):
         line_ids = []
-        words = line.split()
+        words = line.split()[:MAX_WORDS] #truncate it to fit in sequence
         for word in words:
             id = self.tokenize_word(word)
             line_ids.append(id)
@@ -86,15 +84,31 @@ def preprocess_GPT(hyperparams):
 
     train_reviews = tokenizer.tokenize_reviews_list(train_reviews, hyperparams["seq_len"])
     finetune_reviews = tokenizer.tokenize_reviews_list(finetune_reviews, hyperparams["seq_len"])
+    finetune_scores = tokenizer.tokenize_reviews_list(finetune_scores, 1)
     validate_reviews = tokenizer.tokenize_reviews_list(validate_reviews, hyperparams["seq_len"])
+    #validate_scores = tokenizer.
 
     train_set = training_dataset_GPT(train_reviews)
+    finetune_set = finetune_dataset_GPT(finetune_reviews, finetune_scores)
 
     #TODO: create train, fine_tune, validation loaders
     train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=False) #TODO: set to true
-    finetune_loader, validation_loader = None, None
+    finetune_loader = DataLoader(finetune_set, batch_size=hyperparams["batch_size"], shuffle=False) #TODO: set to true
+    validation_loader = None
 
     return len(tokenizer.word2id), train_loader, finetune_loader, validation_loader
+
+class finetune_dataset_GPT(Dataset):
+    def __init__(self, sequences, scores):
+        self.sequences = sequences
+        self.scores = scores
+        assert len(sequences) == len(scores)
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, idx):
+        return self.sequences[idx], self.scores[idx]
 
 class training_dataset_GPT(Dataset):
     def __init__(self, sequences):

@@ -8,23 +8,23 @@ from data import preprocess_GPT, preprocessBERT
 run_GPT = True #TODO: toggle this depending on whether we are running BERT or GPT
 
 gpt_hyperparams = {
-    "batch_size": 16,
-    "num_epochs": 1,
-    "learning_rate": 0.004,
+    "batch_size": 4,
+    "num_epochs": 4,
+    "learning_rate": 0.0002,
     "num_heads": 4,
     "num_layers": 2,
-    "d_model": 256,
-    "seq_len": 192
+    "d_model": 512,
+    "seq_len": 128
  }
 
 bert_hyperparams = {
     "batch_size": 16,
-    "num_epochs": 1 * 100/15, #adjusts for only training on 15% of data
+    "num_epochs": 4 * 100/15, #adjusts for only training on 15% of data
     "learning_rate": 0.004,
     "num_heads": 4,
     "num_layers": 2,
     "d_model": 256,
-    "seq_len": 192
+    "seq_len": 128
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -37,6 +37,8 @@ else:
 
 
 def train_GPT(model, train_loader, hyperparams):
+    return  # TODO: just for debugging finetuning loop
+
     loss_fn = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
 
@@ -63,7 +65,54 @@ def train_GPT(model, train_loader, hyperparams):
                 flat_pred = torch.flatten(pred, start_dim=0, end_dim=1)
                 flat_labels = torch.flatten(labels_batch, start_dim=0, end_dim=1)
                 loss = loss_fn(flat_pred, flat_labels)
-                batch_loss = loss.detach().numpy()
+                batch_loss = loss.detach().cpu().numpy()
+                batch_perp = np.exp(batch_loss)
+
+                if (batch_i % 10 == 1):
+                    first_preds = pred[:3].detach().cpu().numpy()
+                    first_preds = first_preds.argmax(axis=2)[:5]
+                    #print("first preds shape", first_preds.shape)
+                    print("first preds", first_preds)
+                print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp)
+                experiment.log_metric("train_loss", batch_loss)
+                experiment.log_metric("train_perp", batch_perp)
+
+                loss.backward()
+                optimizer.step()
+
+
+
+def finetune_GPT(model, finetune_loader, hyperparams):
+    loss_fn = nn.CrossEntropyLoss(ignore_index=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
+
+    model = model.train()
+    with experiment.train():
+        for epoch_i in range(hyperparams["num_epochs"]):
+            for batch_i, (seq_batch, scores_batch) in enumerate(finetune_loader):
+                optimizer.zero_grad()
+
+                seq_batch = seq_batch.to(device)
+                print("seq shape", seq_batch.shape) #should be batch size, seq len
+                inp_batch = seq_batch
+
+                print(seq_batch.shape)
+                labels_batch = seq_batch
+                labels_batch[:, :-1] = 0
+                labels_batch[:, -1] = scores_batch # This expects label at last entry in sequence, can also try as the first padding token
+
+                #print("seq_batch", seq_batch[5])
+                #print("inp batch", inp_batch[5])
+                #print("labels batch", labels_batch[5])
+                #exit(1)
+
+
+                pred = model(inp_batch)
+
+                flat_pred = torch.flatten(pred, start_dim=0, end_dim=1)
+                flat_labels = torch.flatten(labels_batch, start_dim=0, end_dim=1)
+                loss = loss_fn(flat_pred, flat_labels)
+                batch_loss = loss.detach().cpu().numpy()
                 batch_perp = np.exp(batch_loss)
 
                 print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp)
@@ -72,6 +121,7 @@ def train_GPT(model, train_loader, hyperparams):
 
                 loss.backward()
                 optimizer.step()
+
 
 
 
@@ -108,6 +158,8 @@ if __name__ == "__main__":
 
     #fine tune model
     print("fine tuning model ...")
+    if run_GPT:
+        finetune_GPT(model, fine_tuning_loader, gpt_hyperparams)
 
     #validate model
     print("validating mode ...")
