@@ -62,14 +62,16 @@ def train_GPT(model, train_loader, hyperparams):
 
                 flat_pred = torch.flatten(pred, start_dim=0, end_dim=1)
                 flat_labels = torch.flatten(labels_batch, start_dim=0, end_dim=1)
-                batch_loss = loss_fn(flat_pred, flat_labels).detach().numpy()
+                loss = loss_fn(flat_pred, flat_labels)
+                batch_loss = loss.detach().numpy()
                 batch_perp = np.exp(batch_loss)
 
                 print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp)
+                experiment.log_metric("train_loss", batch_loss)
+                experiment.log_metric("train_perp", batch_perp)
 
-
-
-
+                loss.backward()
+                optimizer.step()
 
 
 

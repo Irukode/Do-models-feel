@@ -6,6 +6,7 @@ import torch
 class GPT(nn.Module):
     def __init__(self, device, seq_len, num_words, d_model=512, h=8, n=6):
         super().__init__()
+        self.device = device
         self.tok_emb = nn.Embedding(num_embeddings=num_words, embedding_dim=d_model)
         self.pos_emb = nn.Parameter(torch.randn([seq_len, d_model]),requires_grad=True)
 
@@ -27,7 +28,7 @@ class GPT(nn.Module):
         out = out.transpose(1,0) #Transformer requires batch second!
 
         mask = (torch.triu(torch.ones(seq_len, seq_len)) == 1).transpose(0, 1)
-        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0)).to(self.device)
 
         out = self.transformer(out, mask=mask)
 
