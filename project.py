@@ -38,13 +38,23 @@ else:
 
 def train_GPT(model, train_loader, hyperparams):
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate']) #TODO: ignore index
 
     model = model.train()
     with experiment.train():
         for epoch_i in range(hyperparams["num_epochs"]):
             for batch_i, seq_batch in enumerate(train_loader):
                 optimizer.zero_grad()
+
+                seq_batch = seq_batch.to(device)
+                print("seq shape", seq_batch.shape) #should be batch size, seq len
+                inp_batch = seq_batch[:,:-1]
+                out_batch = seq_batch[:,1:]
+
+                pred = model(inp_batch)
+                batch_loss = loss_fn()
+
+
 
 
 
