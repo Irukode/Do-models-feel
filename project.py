@@ -13,7 +13,7 @@ run_GPT = False #TODO: toggle this depending on whether we are running BERT or G
 
 gpt_hyperparams = {
     "batch_size": 128,
-    "num_epochs": 12,
+    "num_epochs": 8,
     "learning_rate": 0.0004,
     "num_heads": 8,
     "num_layers": 6,
@@ -23,7 +23,7 @@ gpt_hyperparams = {
 
 bert_hyperparams = {
     "batch_size": 128,
-    "num_epochs": 12,
+    "num_epochs": 8,
     "learning_rate": 5e-5,
     "num_heads": 8,
     "num_layers": 6,
@@ -41,7 +41,7 @@ else:
 
 
 def train_GPT(model, train_loader, hyperparams):
-    return  # TODO: just for debugging finetuning loop
+    # return  # TODO: just for debugging finetuning loop
 
     loss_fn = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
@@ -147,7 +147,7 @@ def validate_GPT(model, validate_loader, hyperparams):
 
             total_token_count += len(seq_batch)
             total_correct_token_count += batch_correct
-
+        print("test final acc", total_correct_token_count / float(total_token_count))
         experiment.log_metric("test_final_acc", total_correct_token_count / float(total_token_count))
 
 
@@ -215,6 +215,7 @@ def finetune_BERT(model, finetune_loader, hyperparams):
 
                 seq_batch = batch_i["labels"].to(device)
                 scores = batch_i["scores"].to(device)
+                scores = torch.flatten(scores, start_dim=0, end_dim=1).to(device)
 
                 pred = model(seq_batch)
                 pred = pred[:, -1]
@@ -222,14 +223,14 @@ def finetune_BERT(model, finetune_loader, hyperparams):
                 loss = loss_fn(pred, scores)
                 batch_loss = loss.detach().cpu().numpy()
 
-                labels_batch = labels_batch.cpu()
+                labels_batch = scores.cpu()
                 flat_pred = torch.argmax(pred, dim=1).detach().cpu()
                 total_correct = torch.sum(flat_pred == labels_batch)
                 batch_acc = total_correct / float(len(labels_batch))
 
                 batch_perp = np.exp(batch_loss)
 
-                print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp, "acc", batch_acc)
+                print("ep", epoch_i, "loss", batch_loss, "perp", batch_perp, "acc", batch_acc)
                 experiment.log_metric("finetune_loss", batch_loss)
                 experiment.log_metric("finetune_perp", batch_perp)
                 experiment.log_metric("finetune_acc", batch_acc)
@@ -237,9 +238,41 @@ def finetune_BERT(model, finetune_loader, hyperparams):
                 loss.backward()
                 optimizer.step()
 
-                if batch_i > 250:  # TODO: debugging, remove this
-                    return
+def validate_BERT(model, validate_loader, hyperparams):
+    loss_fn = nn.CrossEntropyLoss()
+    total_token_count = 0
+    total_correct_token_count = 0
 
+    model = model.eval()
+    with experiment.test():
+        for batch_i in tqdm(validate_loader):
+            seq_batch = batch_i["labels"].to(device)
+            scores = batch_i["scores"].to(device)
+            scores = torch.flatten(scores, start_dim=0, end_dim=1).to(device)
+
+            pred = model(seq_batch)
+            pred = pred[:, -1]
+
+            loss = loss_fn(pred, scores)
+            batch_loss = loss.detach().cpu().numpy()
+
+            labels_batch = scores.cpu()
+            flat_pred = torch.argmax(pred, dim=1).detach().cpu()
+            batch_correct = torch.sum(flat_pred == labels_batch)
+            batch_acc = batch_correct / float(len(labels_batch))
+
+            batch_perp = np.exp(batch_loss)
+
+            print("loss", batch_loss, "perp", batch_perp, "acc", batch_acc)
+            experiment.log_metric("test_loss", batch_loss)
+            experiment.log_metric("test_perp", batch_perp)
+            experiment.log_metric("test_acc", batch_acc)
+
+            total_token_count += len(seq_batch)
+            total_correct_token_count += batch_correct
+
+        print("test final accuracy", total_correct_token_count / float(total_token_count))
+        experiment.log_metric("test_final_acc", total_correct_token_count / float(total_token_count))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -253,6 +286,8 @@ if __name__ == "__main__":
                         help="run finetune loop")
     parser.add_argument("-t", "--test", action="store_true",
                         help="run testing loop")
+    parser.add_argument("-v", "--validate", action="store_true",
+                        help="run validation loop")
     args = parser.parse_args()
 
     if run_GPT:
@@ -298,9 +333,10 @@ if __name__ == "__main__":
             finetune_BERT(model, fine_tuning_loader, bert_hyperparams)
 
     #validate model
-    print("validating mode ...")
-    if run_GPT:
-        validate_GPT(model, validation_loader, gpt_hyperparams)
-    else:
-        pass
+    if args.validate:
+        print("validating mode ...")
+        if run_GPT:
+            validate_GPT(model, validation_loader, gpt_hyperparams)
+        else:
+            validate_BERT(model, validation_loader, bert_hyperparams)
 

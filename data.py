@@ -217,6 +217,8 @@ class training_dataset_BERT(Dataset):
 class finetune_dataset_BERT(Dataset):
     def __init__(self, sequences, word2id, scores):
         self.labels = sequences
+        for rows in self.labels:
+            rows[-1] = word2id[MASK_TOKEN]
         self.sequences = sequences.tolist()
         self.word2id = word2id
         self.scores = scores
