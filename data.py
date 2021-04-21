@@ -2,9 +2,11 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 import numpy as np
 from tqdm import tqdm
+from string import punctuation
 
 MAX_WORDS = 62 #seq len - 2
 MASK_TOKEN = "<MASK>"
+UNK_CUTOFF = 100 #if word occurs less than this, it is UNKed
 
 # generates sentences and scores for train, fine tune, validation
 def readCSV():
@@ -30,6 +32,20 @@ def readCSV():
     reviews = np.array(reviews)
     scores = np.array(scores)
 
+    word_count = {}
+    for review in reviews:
+        for word in review.split():
+            word = clean_word(word)
+            if word not in word_count:
+                word_count[word] = 0
+            word_count[word] += 1
+
+    unk_words = set()
+    for word in word_count:
+        word = clean_word(word)
+        if word_count[word] < UNK_CUTOFF:
+            unk_words.add(word)
+
     indices = np.arange(len(reviews))
     np.random.shuffle(indices)
     length = len(reviews)
@@ -43,14 +59,20 @@ def readCSV():
     validate_reviews = reviews[validate_indices]
     validate_scores = scores[validate_indices]
 
-    return train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores
+    return train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores, unk_words
+
+def clean_word(word):
+    word = word.lower()
+    word = word.rstrip(punctuation)
+    return word
 
 class Tokenizer():
-    def __init__(self):
-        self.word2id = {}
-        self.id2word = {}
-        self.curr_id = 0
-        self.tokenize_word("PAD")
+    def __init__(self, unk_words):
+        self.unk_words = unk_words
+        self.word2id = {"pad":0, "unk":1}
+        self.id2word = {0:"pad", 1:"unk"}
+        self.curr_id = 2
+
 
     def tokenize_reviews_list(self, reviews, seq_len):
         all_ids = []
@@ -59,7 +81,7 @@ class Tokenizer():
             all_ids.append(torch.LongTensor(ids))
 
         all_ids.append(torch.zeros(seq_len))  # spacer line to ensure padding goes to seq len
-        all_ids = torch.nn.utils.rnn.pad_sequence(all_ids, batch_first=True, padding_value=self.word2id["PAD"])
+        all_ids = torch.nn.utils.rnn.pad_sequence(all_ids, batch_first=True, padding_value=self.word2id["pad"])
         all_ids = all_ids[:-1]  # remove spacer line
         assert len(all_ids[0]) == seq_len
         return all_ids
@@ -73,6 +95,10 @@ class Tokenizer():
         return line_ids
 
     def tokenize_word(self, word):
+        word = clean_word(word)
+        if word in self.unk_words:
+            word = "unk"
+
         if word not in self.word2id:
             self.word2id[word] = self.curr_id
             self.id2word[self.curr_id] = word
@@ -81,8 +107,8 @@ class Tokenizer():
 
 
 def preprocess_GPT(hyperparams):
-    train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores = readCSV()
-    tokenizer = Tokenizer()
+    train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores, unk_words = readCSV()
+    tokenizer = Tokenizer(unk_words)
 
     train_reviews = tokenizer.tokenize_reviews_list(train_reviews, hyperparams["seq_len"])
     finetune_reviews = tokenizer.tokenize_reviews_list(finetune_reviews, hyperparams["seq_len"])
@@ -126,8 +152,8 @@ class training_dataset_GPT(Dataset):
 
 
 def preprocess_BERT(hyperparams):
-    train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores = readCSV()
-    tokenizer = Tokenizer()
+    train_reviews, finetune_reviews, finetune_scores, validate_reviews, validate_scores, unk_words = readCSV()
+    tokenizer = Tokenizer(unk_words)
     # TODO: tokenize sentences, scores
     train_reviews = tokenizer.tokenize_reviews_list(train_reviews, hyperparams["seq_len"])
     finetune_reviews = tokenizer.tokenize_reviews_list(finetune_reviews, hyperparams["seq_len"])
