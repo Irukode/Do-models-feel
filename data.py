@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from tqdm import tqdm
 
-MAX_WORDS = 126 #seq len - 2
+MAX_WORDS = 62 #seq len - 2
 MASK_TOKEN = "<MASK>"
 
 # generates sentences and scores for train, fine tune, validation
@@ -142,8 +142,8 @@ def preprocess_BERT(hyperparams):
     finetune_set = finetune_dataset_BERT(finetune_reviews, word2id, finetune_scores)
     validate_set = finetune_dataset_BERT(validate_reviews, word2id, validate_scores)
 
-    train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=False) # TODO: set to true
-    finetune_loader = DataLoader(finetune_set, batch_size=hyperparams["batch_size"], shuffle=False) # TODO: set to true
+    train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=True) # TODO: set to true
+    finetune_loader = DataLoader(finetune_set, batch_size=hyperparams["batch_size"], shuffle=True) # TODO: set to true
     validation_loader = DataLoader(validate_set, batch_size=hyperparams["batch_size"], shuffle=False) # TODO: set to true
 
     return len(word2id), train_loader, finetune_loader, validation_loader
