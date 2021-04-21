@@ -18,7 +18,7 @@ gpt_hyperparams = {
     "num_heads": 4,
     "num_layers": 2,
     "d_model": 512,
-    "seq_len": 128
+    "seq_len": 62
  }
 
 bert_hyperparams = {
@@ -28,7 +28,7 @@ bert_hyperparams = {
     "num_heads": 4,
     "num_layers": 2,
     "d_model": 256,
-    "seq_len": 128
+    "seq_len": 62
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -186,7 +186,7 @@ def train_BERT(model, train_loader, hyperparams):
                 flat_pred = y_pred_masked.permute(0,2,1)
 
                 loss = loss_fn(flat_pred, masked_y_labels)
-                total_loss = loss * current_count
+                total_loss += loss * current_count
 
                 batch_loss = loss.detach().cpu().numpy()
                 batch_perp = np.exp(batch_loss)
