@@ -5,6 +5,8 @@ import numpy as np
 from models import GPT, BERT
 from data import preprocess_GPT, preprocess_BERT
 from tqdm import tqdm
+import argparse
+
 
 run_GPT = False #TODO: toggle this depending on whether we are running BERT or GPT
 # run_GPT = True
@@ -139,7 +141,7 @@ def train_BERT(model, train_loader, hyperparams):
                 seq_batch = batch_i["sequences"].to(device)
                 masked_indices = batch_i["masked_indices"].to(device)
                 labels = batch_i["labels"].to(device)
-                print("seq shape", seq_batch.shape)  # should be [batch size, seq len]
+                # print("seq shape", seq_batch.shape)  # should be [batch size, seq len]
 
                 # grab the labels we need for loss calculation
                 masked_y_labels = torch.LongTensor(np.zeros(masked_indices.shape)).to(device)
@@ -180,6 +182,17 @@ def train_BERT(model, train_loader, hyperparams):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--load", action="store_true",
+                        help="load model.pt")
+    parser.add_argument("-s", "--save", action="store_true",
+                        help="save model.pt")
+    parser.add_argument("-T", "--train", action="store_true",
+                        help="run training loop")
+    parser.add_argument("-t", "--test", action="store_true",
+                        help="run testing loop")
+    args = parser.parse_args()
+
     if run_GPT:
         print("loading data for GPT model")
         vocab_size, train_loader, fine_tuning_loader, validation_loader = preprocess_GPT(gpt_hyperparams)
@@ -192,17 +205,26 @@ if __name__ == "__main__":
         model = GPT(device=device, seq_len=gpt_hyperparams["seq_len"], num_words=vocab_size,
                     d_model=gpt_hyperparams["d_model"], h= gpt_hyperparams["num_heads"],
                     n=gpt_hyperparams["num_layers"]).to(device)
+
+        if args.load:
+            model.load_state_dict(torch.load('./gpt_model.pt'))
     else:
         model = BERT(device=device, seq_len=bert_hyperparams["seq_len"], num_words=vocab_size,
                     d_model=bert_hyperparams["d_model"], h=bert_hyperparams["num_heads"],
                     n=bert_hyperparams["num_layers"]).to(device)
+        if args.load:
+            model.load_state_dict(torch.load('./bert_model.pt'))
 
     #train model
     print("training model ...")
     if run_GPT:
         train_GPT(model, train_loader, gpt_hyperparams)
+        if args.save:
+            torch.save(model.state_dict(), './gpt_model.pt')
     else:
         train_BERT(model, train_loader, bert_hyperparams)
+        if args.save:
+            torch.save(model.state_dict(), './bert_model.pt')
 
     #fine tune model
     print("fine tuning model ...")
