@@ -174,11 +174,9 @@ def train_BERT(model, train_loader, hyperparams):
                 optimizer.step()
 
             average_loss = total_loss / word_count
-            perplexity = np.exp(average_loss)
+            perplexity = torch.exp(average_loss)
+            perplexity = perplexity.detach().cpu().clone().numpy()
             print("ep", epoch_i, "loss", total_loss, "perp", perplexity)
-
-
-
 
 
 if __name__ == "__main__":

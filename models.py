@@ -1,7 +1,6 @@
 from torch import nn
 import torch
 
-
 #A Transformer Language Model
 class GPT(nn.Module):
     def __init__(self, device, seq_len, num_words, d_model=512, h=8, n=6):
@@ -42,6 +41,7 @@ class GPT(nn.Module):
 class BERT(nn.Module):
     def __init__(self, device, seq_len, num_words, d_model=512, h=8, n=6):
         super().__init__()
+        self.device = device
         self.tok_emb = nn.Embedding(num_embeddings=num_words, embedding_dim=d_model)
         self.pos_emb = nn.Parameter(torch.randn([seq_len, d_model]),requires_grad=True)
 
@@ -50,10 +50,11 @@ class BERT(nn.Module):
         self.linear = nn.Linear(d_model, num_words)
 
     def forward(self, x):
+        seq_len = x.shape[1]
         out = self.tok_emb(x) + self.pos_emb
-        # out = out.transpose(1,0) #Transpose to put the batch second?
+        out = out.transpose(1,0) #Transpose to put the batch second?
         out = self.transformer(out)
-        # out = out.transpose(1,0)
+        out = out.transpose(1,0)
         out = self.linear(out)
         return out
 
