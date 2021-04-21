@@ -9,26 +9,26 @@ import argparse
 
 
 run_GPT = False #TODO: toggle this depending on whether we are running BERT or GPT
-run_GPT = True
+# run_GPT = True
 
 gpt_hyperparams = {
-    "batch_size": 4,
-    "num_epochs": 4,
-    "learning_rate": 0.0002,
-    "num_heads": 4,
-    "num_layers": 2,
+    "batch_size": 128,
+    "num_epochs": 12,
+    "learning_rate": 0.0004,
+    "num_heads": 8,
+    "num_layers": 6,
     "d_model": 512,
-    "seq_len": 62
+    "seq_len": 64
  }
 
 bert_hyperparams = {
-    "batch_size": 4,
-    "num_epochs": 4,
-    "learning_rate": 0.004,
-    "num_heads": 4,
-    "num_layers": 2,
-    "d_model": 256,
-    "seq_len": 62
+    "batch_size": 128,
+    "num_epochs": 12,
+    "learning_rate": 5e-5,
+    "num_heads": 8,
+    "num_layers": 6,
+    "d_model": 512,
+    "seq_len": 64
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -203,6 +203,43 @@ def train_BERT(model, train_loader, hyperparams):
             perplexity = perplexity.detach().cpu().clone().numpy()
             print("ep", epoch_i, "loss", total_loss, "perp", perplexity)
 
+def finetune_BERT(model, finetune_loader, hyperparams):
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
+
+    model = model.train()
+    with experiment.train():
+        for epoch_i in range(hyperparams["num_epochs"]):
+            for batch_i in tqdm(finetune_loader):
+                optimizer.zero_grad()
+
+                seq_batch = batch_i["labels"].to(device)
+                scores = batch_i["scores"].to(device)
+
+                pred = model(seq_batch)
+                pred = pred[:, -1]
+
+                loss = loss_fn(pred, scores)
+                batch_loss = loss.detach().cpu().numpy()
+
+                labels_batch = labels_batch.cpu()
+                flat_pred = torch.argmax(pred, dim=1).detach().cpu()
+                total_correct = torch.sum(flat_pred == labels_batch)
+                batch_acc = total_correct / float(len(labels_batch))
+
+                batch_perp = np.exp(batch_loss)
+
+                print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp, "acc", batch_acc)
+                experiment.log_metric("finetune_loss", batch_loss)
+                experiment.log_metric("finetune_perp", batch_perp)
+                experiment.log_metric("finetune_acc", batch_acc)
+
+                loss.backward()
+                optimizer.step()
+
+                if batch_i > 250:  # TODO: debugging, remove this
+                    return
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -212,6 +249,8 @@ if __name__ == "__main__":
                         help="save model.pt")
     parser.add_argument("-T", "--train", action="store_true",
                         help="run training loop")
+    parser.add_argument("-f", "--finetune", action="store_true",
+                        help="run finetune loop")
     parser.add_argument("-t", "--test", action="store_true",
                         help="run testing loop")
     args = parser.parse_args()
@@ -239,22 +278,24 @@ if __name__ == "__main__":
             model.load_state_dict(torch.load('./bert_model.pt'))
 
     #train model
-    print("training model ...")
-    if run_GPT:
-        train_GPT(model, train_loader, gpt_hyperparams)
-        if args.save:
-            torch.save(model.state_dict(), './gpt_model.pt')
-    else:
-        train_BERT(model, train_loader, bert_hyperparams)
-        if args.save:
-            torch.save(model.state_dict(), './bert_model.pt')
+    if args.train:
+        print("training model ...")
+        if run_GPT:
+            train_GPT(model, train_loader, gpt_hyperparams)
+            if args.save:
+                torch.save(model.state_dict(), './gpt_model.pt')
+        else:
+            train_BERT(model, train_loader, bert_hyperparams)
+            if args.save:
+                torch.save(model.state_dict(), './bert_model.pt')
 
     #fine tune model
-    print("fine tuning model ...")
-    if run_GPT:
-        finetune_GPT(model, fine_tuning_loader, gpt_hyperparams)
-    else:
-        pass
+    if args.finetune:
+        print("fine tuning model ...")
+        if run_GPT:
+            finetune_GPT(model, fine_tuning_loader, gpt_hyperparams)
+        else:
+            finetune_BERT(model, fine_tuning_loader, bert_hyperparams)
 
     #validate model
     print("validating mode ...")
