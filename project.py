@@ -9,7 +9,7 @@ import argparse
 
 
 run_GPT = False #TODO: toggle this depending on whether we are running BERT or GPT
-# run_GPT = True
+run_GPT = True
 
 gpt_hyperparams = {
     "batch_size": 4,
@@ -53,16 +53,9 @@ def train_GPT(model, train_loader, hyperparams):
                 optimizer.zero_grad()
 
                 seq_batch = seq_batch.to(device)
-                print("seq shape", seq_batch.shape) #should be [batch size, seq len]
                 inp_batch = seq_batch
                 labels_batch = torch.roll(seq_batch, -1, 1)
                 labels_batch[:,-1] = 0
-
-                #print("seq_batch", seq_batch[5])
-                #print("inp batch", inp_batch[5])
-                #print("labels batch", labels_batch[5])
-                #exit(1)
-
 
                 pred = model(inp_batch)
 
@@ -75,7 +68,6 @@ def train_GPT(model, train_loader, hyperparams):
                 if (batch_i % 10 == 1):
                     first_preds = pred[:3].detach().cpu().numpy()
                     first_preds = first_preds.argmax(axis=2)[:5]
-                    #print("first preds shape", first_preds.shape)
                     print("first preds", first_preds)
                 print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp)
                 experiment.log_metric("train_loss", batch_loss)
@@ -87,7 +79,7 @@ def train_GPT(model, train_loader, hyperparams):
 
 
 def finetune_GPT(model, finetune_loader, hyperparams):
-    loss_fn = nn.CrossEntropyLoss(ignore_index=0)
+    loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams['learning_rate'])
 
     model = model.train()
@@ -97,34 +89,67 @@ def finetune_GPT(model, finetune_loader, hyperparams):
                 optimizer.zero_grad()
 
                 seq_batch = seq_batch.to(device)
-                print("seq shape", seq_batch.shape) #should be batch size, seq len
-                inp_batch = seq_batch
+                labels_batch = torch.flatten(scores_batch, start_dim=0, end_dim=1).to(device)
 
-                print("seq_batch shape", seq_batch.shape)
-                labels_batch = torch.zeros_like(seq_batch)
-                print("scores_batch shape", scores_batch.shape)
-                labels_batch[:, -1] = scores_batch[:,-1] #can also try as the first padding token
+                pred = model(seq_batch)
+                pred = pred[:,-1]
 
-                #print("seq_batch", seq_batch[5])
-                #print("inp batch", inp_batch[5])
-                #print("labels batch", labels_batch[5])
-                #exit(1)
-
-
-                pred = model(inp_batch)
-
-                flat_pred = torch.flatten(pred, start_dim=0, end_dim=1)
-                flat_labels = torch.flatten(labels_batch, start_dim=0, end_dim=1)
-                loss = loss_fn(flat_pred, flat_labels)
+                loss = loss_fn(pred, labels_batch)
                 batch_loss = loss.detach().cpu().numpy()
+
+                labels_batch = labels_batch.cpu()
+                flat_pred = torch.argmax(pred, dim=1).detach().cpu()
+                total_correct = torch.sum(flat_pred==labels_batch)
+                batch_acc = total_correct / float(len(labels_batch))
+
                 batch_perp = np.exp(batch_loss)
 
-                print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp)
-                experiment.log_metric("train_loss", batch_loss)
-                experiment.log_metric("train_perp", batch_perp)
+                print("ep", epoch_i, "batch", batch_i, "loss", batch_loss, "perp", batch_perp, "acc", batch_acc)
+                experiment.log_metric("finetune_loss", batch_loss)
+                experiment.log_metric("finetune_perp", batch_perp)
+                experiment.log_metric("finetune_acc", batch_acc)
 
                 loss.backward()
                 optimizer.step()
+
+                if batch_i > 250: #TODO: debugging, remove this
+                    return
+
+
+def validate_GPT(model, validate_loader, hyperparams):
+    loss_fn = nn.CrossEntropyLoss()
+    total_token_count = 0
+    total_correct_token_count = 0
+
+    model = model.eval()
+    with experiment.test():
+        for batch_i, (seq_batch, scores_batch) in enumerate(validate_loader):
+            seq_batch = seq_batch.to(device)
+            labels_batch = torch.flatten(scores_batch, start_dim=0, end_dim=1).to(device)
+
+            pred = model(seq_batch)
+            pred = pred[:, -1]
+
+            loss = loss_fn(pred, labels_batch)
+            batch_loss = loss.detach().cpu().numpy()
+
+            labels_batch = labels_batch.cpu()
+            flat_pred = torch.argmax(pred, dim=1).detach().cpu()
+            batch_correct = torch.sum(flat_pred == labels_batch)
+            batch_acc = batch_correct / float(len(labels_batch))
+
+            batch_perp = np.exp(batch_loss)
+
+            print("batch", batch_i, "loss", batch_loss, "perp", batch_perp, "acc", batch_acc)
+            experiment.log_metric("test_loss", batch_loss)
+            experiment.log_metric("test_perp", batch_perp)
+            experiment.log_metric("test_acc", batch_acc)
+
+            total_token_count += len(seq_batch)
+            total_correct_token_count += batch_correct
+
+        experiment.log_metric("test_final_acc", total_correct_token_count / float(total_token_count))
+
 
 def train_BERT(model, train_loader, hyperparams):
     loss_fn = nn.CrossEntropyLoss(ignore_index=0)
@@ -229,8 +254,12 @@ if __name__ == "__main__":
     if run_GPT:
         finetune_GPT(model, fine_tuning_loader, gpt_hyperparams)
     else:
-        #TODO
         pass
 
     #validate model
     print("validating mode ...")
+    if run_GPT:
+        validate_GPT(model, validation_loader, gpt_hyperparams)
+    else:
+        pass
+

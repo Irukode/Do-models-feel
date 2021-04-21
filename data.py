@@ -88,15 +88,16 @@ def preprocess_GPT(hyperparams):
     finetune_reviews = tokenizer.tokenize_reviews_list(finetune_reviews, hyperparams["seq_len"])
     finetune_scores = tokenizer.tokenize_reviews_list(finetune_scores, 1)
     validate_reviews = tokenizer.tokenize_reviews_list(validate_reviews, hyperparams["seq_len"])
-    #validate_scores = tokenizer.
+    validate_scores = tokenizer.tokenize_reviews_list(validate_scores, 1)
 
     train_set = training_dataset_GPT(train_reviews)
     finetune_set = finetune_dataset_GPT(finetune_reviews, finetune_scores)
+    validation_set = finetune_dataset_GPT(validate_reviews, validate_scores)
 
     #TODO: create train, fine_tune, validation loaders
     train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=False) #TODO: set to true
     finetune_loader = DataLoader(finetune_set, batch_size=hyperparams["batch_size"], shuffle=False) #TODO: set to true
-    validation_loader = None
+    validation_loader = DataLoader(validation_set, batch_size=hyperparams["batch_size"], shuffle=False)
 
     return len(tokenizer.word2id), train_loader, finetune_loader, validation_loader
 
