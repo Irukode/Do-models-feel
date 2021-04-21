@@ -98,10 +98,10 @@ def finetune_GPT(model, finetune_loader, hyperparams):
                 print("seq shape", seq_batch.shape) #should be batch size, seq len
                 inp_batch = seq_batch
 
-                print(seq_batch.shape)
-                labels_batch = seq_batch
-                labels_batch[:, :-1] = 0
-                labels_batch[:, -1] = scores_batch # This expects label at last entry in sequence, can also try as the first padding token
+                print("seq_batch shape", seq_batch.shape)
+                labels_batch = torch.zeros_like(seq_batch)
+                print("scores_batch shape", scores_batch.shape)
+                labels_batch[:, -1] = scores_batch[:,-1] #can also try as the first padding token
 
                 #print("seq_batch", seq_batch[5])
                 #print("inp batch", inp_batch[5])
