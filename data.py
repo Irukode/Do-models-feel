@@ -121,9 +121,9 @@ def preprocess_GPT(hyperparams):
     validation_set = finetune_dataset_GPT(validate_reviews, validate_scores)
 
     #TODO: create train, fine_tune, validation loaders
-    train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=False) #TODO: set to true
-    finetune_loader = DataLoader(finetune_set, batch_size=hyperparams["batch_size"], shuffle=False) #TODO: set to true
-    validation_loader = DataLoader(validation_set, batch_size=hyperparams["batch_size"], shuffle=False)
+    train_loader = DataLoader(train_set, batch_size=hyperparams["batch_size"], shuffle=True) #TODO: set to true
+    finetune_loader = DataLoader(finetune_set, batch_size=hyperparams["batch_size"], shuffle=True) #TODO: set to true
+    validation_loader = DataLoader(validation_set, batch_size=hyperparams["batch_size"], shuffle=True)
 
     return len(tokenizer.word2id), train_loader, finetune_loader, validation_loader
 
